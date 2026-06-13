@@ -1283,30 +1283,20 @@ impl PluginsManager {
             ),
         )
         .await;
-        let plugin_data_root = self.store.plugin_data_root(&plugin_id);
-        let hook_sources = if is_app_bundled_plugin(&plugin_id) {
-            if plugin.enabled {
-                self.plugin_hooks_for_layer_stack(&config.config_layer_stack, config)
-                    .await
-                    .hook_sources
-                    .into_iter()
-                    .filter(|source| source.plugin_id == plugin_id)
-                    .collect()
-            } else {
-                Vec::new()
-            }
+        let hooks = if is_app_bundled_plugin(&plugin_id) {
+            Vec::new()
         } else {
+            let plugin_data_root = self.store.plugin_data_root(&plugin_id);
             let (sources, _warnings) =
                 load_plugin_hooks(&source_path, &plugin_id, &plugin_data_root, &manifest.paths);
-            sources
+            plugin_hook_declarations(&sources)
+                .into_iter()
+                .map(|hook| PluginHookSummary {
+                    key: hook.key,
+                    event_name: hook.event_name,
+                })
+                .collect()
         };
-        let hooks = plugin_hook_declarations(&hook_sources)
-            .into_iter()
-            .map(|hook| PluginHookSummary {
-                key: hook.key,
-                event_name: hook.event_name,
-            })
-            .collect();
         let app_metadata = load_plugin_app_metadata(source_path.as_path()).await;
         let apps = app_metadata.iter().map(|app| app.id.clone()).collect();
         let app_category_by_id = app_metadata

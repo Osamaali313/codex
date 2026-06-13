@@ -110,23 +110,15 @@ impl ClaudeHooksEngine {
         enabled: bool,
         bypass_hook_trust: bool,
         config_layer_stack: Option<&ConfigLayerStack>,
-        plugin_hook_sources: Vec<PluginHookSource>,
-        plugin_hook_load_warnings: Vec<String>,
+        mut plugin_hook_sources: Vec<PluginHookSource>,
+        mut plugin_hook_load_warnings: Vec<String>,
         shell: CommandShell,
     ) -> Self {
-        let plugin_hook_load_warnings = if enabled {
-            plugin_hook_load_warnings
-        } else {
-            Vec::new()
-        };
-        let plugin_hook_sources = if enabled {
+        if !enabled {
             plugin_hook_sources
-        } else {
-            plugin_hook_sources
-                .into_iter()
-                .filter(|source| source.kind == PluginHookSourceKind::AppBundledInternal)
-                .collect()
-        };
+                .retain(|source| source.kind == PluginHookSourceKind::AppBundledInternal);
+            plugin_hook_load_warnings.clear();
+        }
         if !enabled && plugin_hook_sources.is_empty() {
             return Self {
                 handlers: Vec::new(),
@@ -138,7 +130,7 @@ impl ClaudeHooksEngine {
 
         let _ = schema_loader::generated_hook_schemas();
         let discovered = discovery::discover_handlers(
-            enabled.then_some(config_layer_stack).flatten(),
+            config_layer_stack.filter(|_| enabled),
             plugin_hook_sources,
             plugin_hook_load_warnings,
             bypass_hook_trust,

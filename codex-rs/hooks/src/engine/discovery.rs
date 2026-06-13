@@ -514,17 +514,16 @@ fn append_matcher_groups(
                     // TODO(abhinav): replace this positional suffix with a durable hook id.
                     let key =
                         crate::hook_key(&source.key_source, event_name, group_index, handler_index);
-                    let state = (!source.is_forced())
-                        .then(|| source.hook_states.get(&key))
-                        .flatten();
-                    let enabled = source.is_forced() || hook_enabled(source.is_managed, state);
+                    let is_forced = source.is_forced();
+                    let state = (!is_forced).then(|| source.hook_states.get(&key)).flatten();
+                    let enabled = is_forced || hook_enabled(source.is_managed, state);
                     let trusted_hash = hook_trusted_hash(source.is_managed, state);
-                    let trust_status = if source.is_forced() {
+                    let trust_status = if is_forced {
                         HookTrustStatus::Trusted
                     } else {
                         hook_trust_status(source.is_managed, &current_hash, trusted_hash)
                     };
-                    if source.source != HookSource::AppBundledInternal {
+                    if !is_forced {
                         hook_entries.push(HookListEntry {
                             key,
                             event_name,
@@ -544,7 +543,7 @@ fn append_matcher_groups(
                         });
                     }
                     if enabled
-                        && (source.is_forced()
+                        && (is_forced
                             || source.bypass_hook_trust
                             || matches!(
                                 trust_status,

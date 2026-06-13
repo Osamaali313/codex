@@ -1067,13 +1067,13 @@ pub(crate) fn codex_hook_run_metadata(
         thread_id: Some(tracking.thread_id.clone()),
         turn_id: Some(tracking.turn_id.clone()),
         model_slug: Some(tracking.model_slug.clone()),
-        hook_name: Some(analytics_hook_event_name(hook.event_name).to_owned()),
-        hook_source: Some(analytics_hook_source(hook.hook_source)),
+        hook_name: Some(hook_event_name(hook.event_name).to_owned()),
+        hook_source: Some(hook_source_name(hook.hook_source)),
         status: Some(analytics_hook_status(hook.status)),
     }
 }
 
-fn analytics_hook_event_name(event_name: HookEventName) -> &'static str {
+pub fn hook_event_name(event_name: HookEventName) -> &'static str {
     match event_name {
         HookEventName::PreToolUse => "PreToolUse",
         HookEventName::PermissionRequest => "PermissionRequest",
@@ -1088,7 +1088,7 @@ fn analytics_hook_event_name(event_name: HookEventName) -> &'static str {
     }
 }
 
-fn analytics_hook_source(source: HookSource) -> &'static str {
+pub fn hook_source_name(source: HookSource) -> &'static str {
     match source {
         HookSource::System => "system",
         HookSource::User => "user",
