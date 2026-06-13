@@ -3,6 +3,7 @@ use std::fs;
 
 use super::DesktopDistributionError;
 use super::DesktopResources;
+#[cfg(unix)]
 use super::InstalledDesktop;
 use super::canonical;
 
