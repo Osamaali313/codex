@@ -4,8 +4,10 @@ use crate::config::edit::apply_blocking;
 use assert_matches::assert_matches;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::ConfigLayerEntry;
+use codex_config::ConfigLayerStack;
 use codex_config::ProfileV2Name;
 use codex_config::RequirementSource;
+use codex_config::Sourced;
 use codex_config::config_toml::AgentRoleToml;
 use codex_config::config_toml::AgentsToml;
 use codex_config::config_toml::AutoReviewToml;
@@ -8302,6 +8304,7 @@ async fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() 
         allowed_web_search_modes: Some(vec![codex_config::WebSearchModeRequirement::Cached]),
         allow_managed_hooks_only: None,
         allow_appshots: None,
+        allow_remote_control: None,
         computer_use: None,
         windows: None,
         feature_requirements: None,
