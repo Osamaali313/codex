@@ -156,7 +156,3 @@ pub struct HookCompletedNotification {
     pub turn_id: Option<String>,
     pub run: HookRunSummary,
 }
-
-#[cfg(test)]
-#[path = "hook_tests.rs"]
-mod tests;

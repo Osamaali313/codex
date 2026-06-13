@@ -8,6 +8,7 @@ use codex_plugin::PluginHookSourceKind;
 use codex_plugin::PluginId;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
+use tracing::warn;
 
 use crate::OPENAI_BUNDLED_MARKETPLACE_NAME;
 use crate::loader::load_plugin_hooks;
@@ -24,10 +25,10 @@ pub(crate) fn is_app_bundled_plugin(plugin_id: &PluginId) -> bool {
 pub(crate) async fn load_app_bundled_internal_hooks(
     plugin_id: &PluginId,
     plugin_data_root: &AbsolutePathBuf,
-) -> Result<Vec<PluginHookSource>, String> {
-    let plugin_id = plugin_id.clone();
+) -> Vec<PluginHookSource> {
+    let worker_plugin_id = plugin_id.clone();
     let plugin_data_root = plugin_data_root.clone();
-    tokio::task::spawn_blocking(move || {
+    let worker = tokio::task::spawn_blocking(move || {
         let distribution = DESKTOP_DISTRIBUTION
             .get_or_init(|| {
                 locate_current_or_installed_distribution().map_err(|error| error.to_string())
@@ -36,12 +37,27 @@ pub(crate) async fn load_app_bundled_internal_hooks(
             .map_err(Clone::clone)?;
         load_app_bundled_internal_hooks_from_distribution(
             distribution,
-            &plugin_id,
+            &worker_plugin_id,
             &plugin_data_root,
         )
     })
-    .await
-    .map_err(|error| format!("Desktop discovery worker failed: {error}"))?
+    .await;
+    let result = match worker {
+        Ok(result) => result,
+        Err(error) => Err(format!("Desktop discovery worker failed: {error}")),
+    };
+    match result {
+        Ok(sources) => sources,
+        Err(error) => {
+            warn!(
+                diagnostic_code = "app_bundled_internal_hook_load_failed",
+                plugin_id = %plugin_id.as_key(),
+                error,
+                "app-bundled internal hooks failed closed"
+            );
+            Vec::new()
+        }
+    }
 }
 
 /// Loads this plugin's hooks only from the located Desktop resources root.
