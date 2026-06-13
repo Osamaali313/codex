@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use codex_desktop_distribution::DesktopDistribution;
+use codex_desktop_distribution::DesktopResources;
 use codex_plugin::PluginId;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde_json::json;
@@ -11,9 +11,8 @@ use super::*;
 
 struct Fixture {
     _temp: TempDir,
-    distribution: DesktopDistribution,
+    resources: DesktopResources,
     plugin_data_root: AbsolutePathBuf,
-    resources_root: AbsolutePathBuf,
 }
 
 fn fixture() -> Fixture {
@@ -33,17 +32,9 @@ fn fixture() -> Fixture {
 
     let plugin_data_root = temp.path().join("data/computer-use");
     fs::create_dir_all(&plugin_data_root).expect("plugin data root");
-    let resources_root = AbsolutePathBuf::try_from(
-        fs::canonicalize(&resources_root).expect("canonical resources root"),
-    )
-    .expect("absolute resources root");
 
     Fixture {
-        distribution: DesktopDistribution::from_trusted_resources_path(
-            resources_root.as_path().to_path_buf(),
-        )
-        .expect("Desktop distribution"),
-        resources_root,
+        resources: DesktopResources::from_trusted_path(resources_root).expect("Desktop resources"),
         plugin_data_root: AbsolutePathBuf::try_from(plugin_data_root)
             .expect("absolute plugin data root"),
         _temp: temp,
@@ -57,15 +48,15 @@ fn write(path: &Path, contents: &str) {
 
 fn replace_marketplace(fixture: &Fixture, marketplace: serde_json::Value) {
     write(
-        &fixture.resources_root.join(BUNDLED_MARKETPLACE_PATH),
+        &fixture.resources.root().join(BUNDLED_MARKETPLACE_PATH),
         &marketplace.to_string(),
     );
 }
 
 fn load(fixture: &Fixture) -> Result<Vec<PluginHookSource>, String> {
     let plugin_id = PluginId::parse("computer-use@openai-bundled").expect("plugin id");
-    load_app_bundled_internal_hooks_from_distribution(
-        &fixture.distribution,
+    load_app_bundled_internal_hooks_from_resources(
+        &fixture.resources,
         &plugin_id,
         &fixture.plugin_data_root,
     )
@@ -102,8 +93,8 @@ fn non_bundled_marketplace_cannot_request_internal_hook_loading() {
     let fixture = fixture();
     let plugin_id = PluginId::parse("computer-use@spoofed").expect("plugin id");
 
-    load_app_bundled_internal_hooks_from_distribution(
-        &fixture.distribution,
+    load_app_bundled_internal_hooks_from_resources(
+        &fixture.resources,
         &plugin_id,
         &fixture.plugin_data_root,
     )

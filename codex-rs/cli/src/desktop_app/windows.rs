@@ -1,6 +1,5 @@
 use anyhow::Context as _;
-use codex_desktop_distribution::DesktopDistributionError;
-use codex_desktop_distribution::locate_current_or_installed_distribution;
+use codex_desktop_distribution::discover_installed_distribution;
 use std::path::Path;
 use std::path::PathBuf;
 use tokio::process::Command;
@@ -15,7 +14,7 @@ pub async fn run_windows_app_open_or_install(
 ) -> anyhow::Result<()> {
     let workspace_path = workspace.display().to_string();
     let display_workspace = display_workspace_path(&workspace);
-    if codex_app_is_installed()? {
+    if codex_app_is_installed().await? {
         eprintln!("Opening Codex Desktop workspace {display_workspace}...");
         open_url(&codex_new_thread_url(&workspace_path)).await?;
         return Ok(());
@@ -32,12 +31,11 @@ pub async fn run_windows_app_open_or_install(
     Ok(())
 }
 
-fn codex_app_is_installed() -> anyhow::Result<bool> {
-    match locate_current_or_installed_distribution() {
-        Ok(_) => Ok(true),
-        Err(DesktopDistributionError::NotFound) => Ok(false),
-        Err(error) => Err(error.into()),
-    }
+async fn codex_app_is_installed() -> anyhow::Result<bool> {
+    Ok(tokio::task::spawn_blocking(discover_installed_distribution)
+        .await
+        .context("Desktop discovery task failed")??
+        .is_some())
 }
 
 async fn open_url(url: &str) -> anyhow::Result<()> {

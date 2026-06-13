@@ -1,11 +1,10 @@
 use pretty_assertions::assert_eq;
 use std::fs;
-use std::path::Path;
 
 use super::DesktopDistributionError;
-use super::ResourceKind;
+use super::DesktopResources;
+use super::InstalledDesktop;
 use super::canonical;
-use super::contained_path;
 
 #[test]
 fn resolves_strictly_contained_files_and_directories() {
@@ -15,20 +14,18 @@ fn resolves_strictly_contained_files_and_directories() {
     fs::create_dir_all(&directory).expect("create directory");
     let file = directory.join("hook.json");
     fs::write(&file, "{}").expect("write file");
-    let root = canonical(&root, "test resources root").expect("canonical root");
+    let resources = DesktopResources::from_trusted_path(root).expect("Desktop resources");
 
     assert_eq!(
-        contained_path(&root, Path::new("plugins/demo"), ResourceKind::Directory)
+        resources
+            .contained_directory("plugins/demo")
             .expect("contained directory"),
         canonical(&directory, "test directory").expect("canonical directory")
     );
     assert_eq!(
-        contained_path(
-            &root,
-            Path::new("plugins/demo/hook.json"),
-            ResourceKind::File
-        )
-        .expect("contained file"),
+        resources
+            .contained_file("plugins/demo/hook.json")
+            .expect("contained file"),
         canonical(&file, "test file").expect("canonical file")
     );
 }
@@ -38,15 +35,16 @@ fn rejects_non_normal_and_wrong_kind_paths() {
     let temp = tempfile::tempdir().expect("tempdir");
     let root = temp.path().join("resources");
     fs::create_dir_all(root.join("plugins")).expect("create directory");
+    let resources = DesktopResources::from_trusted_path(root).expect("Desktop resources");
 
     for path in ["", ".", "../resources/plugins", "/tmp"] {
         assert!(matches!(
-            contained_path(&root, Path::new(path), ResourceKind::Directory),
+            resources.contained_directory(path),
             Err(DesktopDistributionError::Containment(_))
         ));
     }
     assert!(matches!(
-        contained_path(&root, Path::new("plugins"), ResourceKind::File),
+        resources.contained_file("plugins"),
         Err(DesktopDistributionError::Containment(_))
     ));
 }
@@ -63,9 +61,20 @@ fn rejects_symlink_traversal() {
     fs::create_dir_all(&outside).expect("create outside");
     fs::write(outside.join("hook.json"), "{}").expect("write file");
     symlink(&outside, root.join("plugins")).expect("create symlink");
+    let resources = DesktopResources::from_trusted_path(root).expect("Desktop resources");
 
     assert!(matches!(
-        contained_path(&root, Path::new("plugins/hook.json"), ResourceKind::File),
+        resources.contained_file("plugins/hook.json"),
+        Err(DesktopDistributionError::Containment(_))
+    ));
+
+    let app_root = temp.path().join("Codex.app");
+    let resources_link = app_root.join("Contents/Resources");
+    fs::create_dir_all(resources_link.parent().expect("resources parent"))
+        .expect("create app contents");
+    symlink(&outside, &resources_link).expect("create resources symlink");
+    assert!(matches!(
+        InstalledDesktop::from_paths(app_root, resources_link),
         Err(DesktopDistributionError::Containment(_))
     ));
 }

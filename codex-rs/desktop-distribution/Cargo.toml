@@ -13,7 +13,7 @@ doctest = false
 workspace = true
 
 [dependencies]
-dunce = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

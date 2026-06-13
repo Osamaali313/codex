@@ -1,40 +1,41 @@
-use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
 use crate::DesktopDistributionError;
-use crate::LocatedDistribution;
+use crate::InstalledDesktop;
 
 const BUNDLE_IDENTIFIER: &str = "com.openai.codex";
+const TEAM_IDENTIFIER: &str = "2DC432GLL2";
 
-pub(crate) fn from_resources_hint(resources_root: PathBuf) -> LocatedDistribution {
-    let app_root = resources_root
-        .ancestors()
-        .find(|ancestor| ancestor.extension().is_some_and(|value| value == "app"))
-        .map_or_else(|| resources_root.clone(), Path::to_path_buf);
-    LocatedDistribution {
-        app_root,
-        resources_root,
-    }
-}
-
-/// Asks LaunchServices for the installed stable Codex app, independent of name or location.
-pub(crate) fn discover() -> Result<LocatedDistribution, DesktopDistributionError> {
+/// Asks LaunchServices for the signed stable Codex app, independent of name or location.
+pub(crate) fn discover() -> Result<Option<InstalledDesktop>, DesktopDistributionError> {
     let script = format!(r#"POSIX path of (path to application id "{BUNDLE_IDENTIFIER}")"#);
     let output = Command::new("/usr/bin/osascript")
         .args(["-e", &script])
         .output()
         .map_err(|error| DesktopDistributionError::Discovery(error.to_string()))?;
     if !output.status.success() {
-        return Err(DesktopDistributionError::NotFound);
+        return Ok(None);
     }
     let app_root = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
     let resources_root = app_root.join("Contents/Resources");
-    if app_root.extension().is_some_and(|value| value == "app") && resources_root.is_dir() {
-        return Ok(LocatedDistribution {
-            app_root,
-            resources_root,
-        });
+    if app_root.extension().is_some_and(|value| value == "app")
+        && resources_root.is_dir()
+        && has_openai_signature(&app_root)?
+    {
+        return InstalledDesktop::from_paths(app_root, resources_root).map(Some);
     }
-    Err(DesktopDistributionError::NotFound)
+    Ok(None)
+}
+
+fn has_openai_signature(app_root: &std::path::Path) -> Result<bool, DesktopDistributionError> {
+    let requirement = format!(
+        r#"=identifier "{BUNDLE_IDENTIFIER}" and anchor apple generic and certificate leaf[subject.OU] = "{TEAM_IDENTIFIER}""#
+    );
+    let verification = Command::new("/usr/bin/codesign")
+        .args(["--verify", "--strict", "-R", &requirement])
+        .arg(app_root)
+        .status()
+        .map_err(|error| DesktopDistributionError::Discovery(error.to_string()))?;
+    Ok(verification.success())
 }

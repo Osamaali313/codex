@@ -6,6 +6,8 @@ use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 
+use codex_utils_absolute_path::AbsolutePathBuf;
+
 #[cfg(target_os = "macos")]
 #[path = "macos.rs"]
 mod platform;
@@ -16,13 +18,11 @@ mod platform;
 #[path = "windows.rs"]
 mod platform;
 
+/// Resource override for trusted Desktop development builds and external CLI launchers.
 pub const DESKTOP_RESOURCES_PATH_ENV_VAR: &str = "CODEX_DESKTOP_RESOURCES_PATH";
 
 #[derive(Debug, thiserror::Error)]
 pub enum DesktopDistributionError {
-    /// This platform has no supported Desktop distribution discovery mechanism.
-    #[error("Codex Desktop distribution discovery is unsupported on this platform")]
-    Unsupported,
     /// No launcher hint was provided and no installed Codex Desktop app was found. This can
     /// happen, for example, when Desktop was uninstalled after installing a bundled plugin.
     #[error("no installed Codex Desktop distribution was found")]
@@ -43,82 +43,85 @@ pub enum DesktopDistributionError {
     Containment(String),
 }
 
-#[derive(Debug, Clone)]
-pub struct DesktopDistribution {
-    app_root: PathBuf,
-    resources_root: PathBuf,
+#[derive(Debug)]
+pub struct DesktopResources {
+    root: AbsolutePathBuf,
 }
 
-impl DesktopDistribution {
-    pub fn app_root(&self) -> &Path {
-        &self.app_root
-    }
-
-    pub fn resources_root(&self) -> &Path {
-        &self.resources_root
+impl DesktopResources {
+    pub fn root(&self) -> &Path {
+        self.root.as_path()
     }
 
     pub fn contained_file(
         &self,
         relative_path: impl AsRef<Path>,
-    ) -> Result<PathBuf, DesktopDistributionError> {
-        contained_path(
-            &self.resources_root,
-            relative_path.as_ref(),
-            ResourceKind::File,
-        )
+    ) -> Result<AbsolutePathBuf, DesktopDistributionError> {
+        contained_path(&self.root, relative_path.as_ref(), ResourceKind::File)
     }
 
     pub fn contained_directory(
         &self,
         relative_path: impl AsRef<Path>,
-    ) -> Result<PathBuf, DesktopDistributionError> {
-        contained_path(
-            &self.resources_root,
-            relative_path.as_ref(),
-            ResourceKind::Directory,
-        )
-    }
-
-    fn new(app_root: PathBuf, resources_root: PathBuf) -> Result<Self, DesktopDistributionError> {
-        let app_root = canonical(&app_root, "application root")?;
-        let resources_root = canonical(&resources_root, "resources root")?;
-        if resources_root != app_root && !resources_root.starts_with(&app_root) {
-            return Err(containment(
-                "resources root is outside the discovered application root",
-            ));
-        }
-        if !resources_root.is_dir() {
-            return Err(containment("expected the resources root to be a directory"));
-        }
-        Ok(Self {
-            app_root,
-            resources_root,
-        })
+    ) -> Result<AbsolutePathBuf, DesktopDistributionError> {
+        contained_path(&self.root, relative_path.as_ref(), ResourceKind::Directory)
     }
 
     /// Uses a resources directory supplied by the trusted Desktop launcher.
-    pub fn from_trusted_resources_path(
+    pub fn from_trusted_path(root: PathBuf) -> Result<Self, DesktopDistributionError> {
+        let root = canonical(&root, "resources root")?;
+        if !root.as_path().is_dir() {
+            return Err(containment("expected the resources root to be a directory"));
+        }
+        Ok(Self { root })
+    }
+}
+
+#[derive(Debug)]
+pub struct InstalledDesktop {
+    app_root: AbsolutePathBuf,
+    resources: DesktopResources,
+}
+
+impl InstalledDesktop {
+    pub fn app_root(&self) -> &Path {
+        self.app_root.as_path()
+    }
+
+    #[cfg(any(target_os = "macos", windows, test))]
+    fn from_paths(
+        app_root: PathBuf,
         resources_root: PathBuf,
     ) -> Result<Self, DesktopDistributionError> {
-        let located = platform::from_resources_hint(resources_root);
-        Self::new(located.app_root, located.resources_root)
+        let app_root = canonical(&app_root, "application root")?;
+        let resources = DesktopResources::from_trusted_path(resources_root)?;
+        if resources.root == app_root || !resources.root.as_path().starts_with(app_root.as_path()) {
+            return Err(containment(
+                "resources root is not strictly below the discovered application root",
+            ));
+        }
+        Ok(Self {
+            app_root,
+            resources,
+        })
     }
 }
 
-/// Uses Desktop's explicit resources hint when present, otherwise discovers an installed app.
-pub fn locate_current_or_installed_distribution()
--> Result<DesktopDistribution, DesktopDistributionError> {
+/// Uses resources supplied by Desktop, otherwise discovers the installed stable app.
+pub fn locate_current_or_installed_resources() -> Result<DesktopResources, DesktopDistributionError>
+{
     if let Some(resources_root) = std::env::var_os(DESKTOP_RESOURCES_PATH_ENV_VAR) {
-        return DesktopDistribution::from_trusted_resources_path(PathBuf::from(resources_root));
+        return DesktopResources::from_trusted_path(PathBuf::from(resources_root));
     }
-    let located = platform::discover()?;
-    DesktopDistribution::new(located.app_root, located.resources_root)
+    discover_installed_distribution()?
+        .map(|distribution| distribution.resources)
+        .ok_or(DesktopDistributionError::NotFound)
 }
 
-pub(crate) struct LocatedDistribution {
-    pub app_root: PathBuf,
-    pub resources_root: PathBuf,
+/// Discovers an installed Desktop app without consulting the launcher resources hint.
+pub fn discover_installed_distribution()
+-> Result<Option<InstalledDesktop>, DesktopDistributionError> {
+    platform::discover()
 }
 
 #[derive(Clone, Copy)]
@@ -128,10 +131,10 @@ enum ResourceKind {
 }
 
 fn contained_path(
-    root: &Path,
+    root: &AbsolutePathBuf,
     relative_path: &Path,
     kind: ResourceKind,
-) -> Result<PathBuf, DesktopDistributionError> {
+) -> Result<AbsolutePathBuf, DesktopDistributionError> {
     if relative_path.as_os_str().is_empty()
         || relative_path
             .components()
@@ -141,16 +144,17 @@ fn contained_path(
             "resource paths must contain only normal relative components",
         ));
     }
-    let path = canonical(&root.join(relative_path), "resource path")?;
-    if path == root || !path.starts_with(root) {
+    let path = canonical(root.join(relative_path).as_path(), "resource path")?;
+    if path == *root || !path.as_path().starts_with(root.as_path()) {
         return Err(containment(
             "resource must remain strictly below the Desktop resources root",
         ));
     }
-    let metadata = fs::metadata(&path).map_err(|source| DesktopDistributionError::Filesystem {
-        stage: "resource metadata",
-        source,
-    })?;
+    let metadata =
+        fs::metadata(path.as_path()).map_err(|source| DesktopDistributionError::Filesystem {
+            stage: "resource metadata",
+            source,
+        })?;
     let expected_kind = match kind {
         ResourceKind::Directory => metadata.is_dir(),
         ResourceKind::File => metadata.is_file(),
@@ -164,8 +168,12 @@ fn contained_path(
     Ok(path)
 }
 
-fn canonical(path: &Path, stage: &'static str) -> Result<PathBuf, DesktopDistributionError> {
-    dunce::canonicalize(path)
+fn canonical(
+    path: &Path,
+    stage: &'static str,
+) -> Result<AbsolutePathBuf, DesktopDistributionError> {
+    AbsolutePathBuf::from_absolute_path_checked(path)
+        .and_then(|path| path.canonicalize())
         .map_err(|source| DesktopDistributionError::Filesystem { stage, source })
 }
 

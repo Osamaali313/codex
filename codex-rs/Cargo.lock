@@ -2806,7 +2806,7 @@ dependencies = [
 name = "codex-desktop-distribution"
 version = "0.0.0"
 dependencies = [
- "dunce",
+ "codex-utils-absolute-path",
  "pretty_assertions",
  "tempfile",
  "thiserror 2.0.18",
