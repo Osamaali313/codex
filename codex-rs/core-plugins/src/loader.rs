@@ -34,6 +34,7 @@ use codex_plugin::PluginId;
 use codex_plugin::PluginIdError;
 use codex_plugin::PluginLoadOutcome;
 use codex_plugin::PluginTelemetryMetadata;
+use codex_protocol::protocol::HookSource;
 use codex_protocol::protocol::Product;
 use codex_protocol::protocol::SkillScope;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -935,7 +936,7 @@ pub fn load_plugin_hooks(
                     source_path: manifest_path.clone(),
                     source_relative_path: format!("plugin.json#hooks[{index}]"),
                     hooks: hooks_file.hooks.clone(),
-                    kind: Default::default(),
+                    source: HookSource::Plugin,
                 });
             }
         }
@@ -1004,7 +1005,7 @@ fn append_plugin_hook_file(
         source_path: path.clone(),
         source_relative_path,
         hooks: parsed.hooks,
-        kind: Default::default(),
+        source: HookSource::Plugin,
     });
 }
 

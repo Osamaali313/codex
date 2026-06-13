@@ -78,7 +78,7 @@ mod tests {
                 }],
                 ..Default::default()
             },
-            kind: Default::default(),
+            source: codex_protocol::protocol::HookSource::Plugin,
         };
         let declarations = plugin_hook_declarations(std::slice::from_ref(&source));
 

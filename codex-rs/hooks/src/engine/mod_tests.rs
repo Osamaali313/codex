@@ -18,7 +18,6 @@ use codex_config::RequirementSource;
 use codex_config::Sourced;
 use codex_config::TomlValue;
 use codex_plugin::PluginHookSource;
-use codex_plugin::PluginHookSourceKind;
 use codex_plugin::PluginId;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::HookEventName;
@@ -903,7 +902,7 @@ fn allow_managed_hooks_only_skips_unmanaged_plugin_hooks() {
         source_path,
         source_relative_path: "hooks/hooks.json".to_string(),
         hooks: pre_tool_use_hook_events("python3 /tmp/plugin-hook.py"),
-        kind: Default::default(),
+        source: HookSource::Plugin,
     }];
     let (requirements, requirements_toml) = requirements_with_managed_hooks_only(
         /*allow_managed_hooks_only*/ true, /*managed_hooks*/ None,
@@ -960,7 +959,7 @@ fn app_bundled_internal_hooks_are_forced_and_hidden() {
         source_path,
         source_relative_path: "hooks/hooks.json".to_string(),
         hooks: pre_tool_use_hook_events(r#""${PLUGIN_ROOT}/internal-hook""#),
-        kind: PluginHookSourceKind::AppBundledInternal,
+        source: HookSource::AppBundledInternal,
     }];
 
     let engine = build_engine(
@@ -971,6 +970,18 @@ fn app_bundled_internal_hooks_are_forced_and_hidden() {
 
     assert_eq!(engine.handlers.len(), 1);
     assert_eq!(engine.handlers[0].source, HookSource::AppBundledInternal);
+    let mut invalid_source = plugin_hook_sources[0].clone();
+    invalid_source.source = HookSource::User;
+    let invalid_engine = build_engine(
+        /*enabled*/ true,
+        /*config_layer_stack*/ None,
+        vec![invalid_source],
+    );
+    assert!(invalid_engine.handlers.is_empty());
+    assert_eq!(
+        invalid_engine.warnings(),
+        &["skipping plugin hook source with invalid source User".to_string()]
+    );
     let key_source = crate::declarations::plugin_hook_key_source(
         "demo-plugin@test-marketplace",
         "hooks/hooks.json",
@@ -1436,7 +1447,7 @@ print(json.dumps({
             }],
             ..Default::default()
         },
-        kind: Default::default(),
+        source: HookSource::Plugin,
     }];
     let config_layer_stack = trusted_plugin_hook_stack(
         AbsolutePathBuf::try_from(temp.path().join("config.toml")).expect("absolute config path"),
@@ -1556,7 +1567,7 @@ fn plugin_hook_sources_expand_plugin_placeholders() {
             }],
             ..Default::default()
         },
-        kind: Default::default(),
+        source: HookSource::Plugin,
     }];
     let config_layer_stack = trusted_plugin_hook_stack(
         AbsolutePathBuf::try_from(temp.path().join("config.toml")).expect("absolute config path"),

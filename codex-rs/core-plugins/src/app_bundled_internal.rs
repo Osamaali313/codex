@@ -4,8 +4,8 @@ use std::sync::OnceLock;
 use codex_desktop_distribution::DesktopResources;
 use codex_desktop_distribution::locate_current_or_installed_resources;
 use codex_plugin::PluginHookSource;
-use codex_plugin::PluginHookSourceKind;
 use codex_plugin::PluginId;
+use codex_protocol::protocol::HookSource;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
 use tracing::warn;
@@ -118,7 +118,7 @@ pub(crate) fn load_app_bundled_internal_hooks_from_resources(
         ));
     }
     for source in &mut sources {
-        source.kind = PluginHookSourceKind::AppBundledInternal;
+        source.source = HookSource::AppBundledInternal;
     }
     Ok(sources)
 }

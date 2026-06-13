@@ -18,7 +18,6 @@ use codex_config::RequirementSource;
 use codex_config::TomlValue;
 use codex_config::version_for_toml;
 use codex_plugin::PluginHookSource;
-use codex_plugin::PluginHookSourceKind;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
 use serde::Serialize;
@@ -230,12 +229,14 @@ fn append_plugin_hook_sources(
             source_path,
             source_relative_path,
             hooks,
-            kind,
+            source,
         } = source;
-        let hook_source = match kind {
-            PluginHookSourceKind::UserReviewed => HookSource::Plugin,
-            PluginHookSourceKind::AppBundledInternal => HookSource::AppBundledInternal,
-        };
+        if !matches!(source, HookSource::Plugin | HookSource::AppBundledInternal) {
+            warnings.push(format!(
+                "skipping plugin hook source with invalid source {source:?}"
+            ));
+            continue;
+        }
         let mut env = HashMap::new();
         let plugin_root_value = plugin_root.display().to_string();
         let plugin_data_root_value = plugin_data_root.display().to_string();
@@ -257,7 +258,7 @@ fn append_plugin_hook_sources(
                     plugin_id.as_str(),
                     source_relative_path.as_str(),
                 ),
-                source: hook_source,
+                source,
                 is_managed: false,
                 bypass_hook_trust: policy.bypass_hook_trust,
                 hook_states,

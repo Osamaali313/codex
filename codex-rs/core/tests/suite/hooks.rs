@@ -17,6 +17,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::HookSource;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
@@ -2916,7 +2917,7 @@ print(json.dumps({{
         hooks: serde_json::from_str::<codex_config::HooksFile>(plugin_hooks_json)
             .context("parse plugin hooks")?
             .hooks,
-        kind: Default::default(),
+        source: HookSource::Plugin,
     }];
 
     let mut builder = test_codex()

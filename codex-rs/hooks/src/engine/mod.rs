@@ -23,7 +23,6 @@ use crate::events::user_prompt_submit::UserPromptSubmitRequest;
 use crate::output_spill::HookOutputSpiller;
 use codex_config::ConfigLayerStack;
 use codex_plugin::PluginHookSource;
-use codex_plugin::PluginHookSourceKind;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::HookEventName;
 use codex_protocol::protocol::HookHandlerType;
@@ -115,8 +114,7 @@ impl ClaudeHooksEngine {
         shell: CommandShell,
     ) -> Self {
         if !enabled {
-            plugin_hook_sources
-                .retain(|source| source.kind == PluginHookSourceKind::AppBundledInternal);
+            plugin_hook_sources.retain(|source| source.source == HookSource::AppBundledInternal);
             plugin_hook_load_warnings.clear();
         }
         if !enabled && plugin_hook_sources.is_empty() {
