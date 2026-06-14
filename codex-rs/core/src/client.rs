@@ -189,6 +189,7 @@ struct ModelClientState {
 /// share the same auth/provider setup flow.
 struct CurrentClientSetup {
     auth: Option<CodexAuth>,
+    auth_mode: Option<AuthMode>,
     api_provider: ApiProvider,
     api_auth: SharedAuthProvider,
 }
@@ -445,7 +446,7 @@ impl ModelClient {
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth_mode,
                 client_setup.api_auth.as_ref(),
                 PendingUnauthorizedRetry::default(),
             ),
@@ -569,7 +570,7 @@ impl ModelClient {
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth_mode,
                 client_setup.api_auth.as_ref(),
                 PendingUnauthorizedRetry::default(),
             ),
@@ -778,10 +779,12 @@ impl ModelClient {
     /// lockstep when auth/provider resolution changes.
     async fn current_client_setup(&self) -> Result<CurrentClientSetup> {
         let auth = self.state.provider.auth().await;
+        let auth_mode = self.state.provider.auth_mode(auth.as_ref());
         let api_provider = self.state.provider.api_provider().await?;
         let api_auth = self.state.provider.api_auth().await?;
         Ok(CurrentClientSetup {
             auth,
+            auth_mode,
             api_provider,
             api_auth,
         })
@@ -1069,7 +1072,7 @@ impl ModelClientSession {
             ))
         })?;
         let auth_context = AuthRequestTelemetryContext::new(
-            client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+            client_setup.auth_mode,
             client_setup.api_auth.as_ref(),
             PendingUnauthorizedRetry::default(),
         );
@@ -1214,7 +1217,7 @@ impl ModelClientSession {
             let client_setup = self.client.current_client_setup().await?;
             let transport = ReqwestTransport::new(build_reqwest_client());
             let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth_mode,
                 client_setup.api_auth.as_ref(),
                 pending_retry,
             );
@@ -1334,7 +1337,7 @@ impl ModelClientSession {
         loop {
             let client_setup = self.client.current_client_setup().await?;
             let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth_mode,
                 client_setup.api_auth.as_ref(),
                 pending_retry,
             );

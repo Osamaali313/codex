@@ -2,8 +2,6 @@ use super::bedrock_auth::has_managed_login as has_managed_bedrock_login;
 use super::bedrock_auth::login as login_managed_bedrock;
 use super::bedrock_auth::logout as logout_managed_bedrock;
 use super::*;
-use codex_login::auth::read_codex_api_key_from_env;
-use codex_login::read_codex_access_token_from_env;
 use codex_model_provider::is_supported_amazon_bedrock_region;
 
 // Duration before a browser ChatGPT login attempt is abandoned.
@@ -336,14 +334,6 @@ impl AccountRequestProcessor {
             if self.auth_manager.is_external_chatgpt_auth_active() {
                 return Err(self.external_auth_active_error());
             }
-            if read_codex_access_token_from_env().is_some()
-                || (self.auth_manager.codex_api_key_env_enabled()
-                    && read_codex_api_key_from_env().is_some())
-            {
-                return Err(invalid_request(
-                    "Amazon Bedrock login is unavailable while Codex auth is supplied through the environment.",
-                ));
-            }
             if matches!(
                 self.config.forced_login_method,
                 Some(ForcedLoginMethod::Chatgpt)
@@ -372,6 +362,7 @@ impl AccountRequestProcessor {
             }
 
             login_managed_bedrock(&self.config, &self.config_manager, api_key, region).await?;
+            self.auth_manager.reload().await;
             Ok(LoginAccountResponse::AmazonBedrock {})
         }
         .await;
@@ -770,6 +761,7 @@ impl AccountRequestProcessor {
 
         if has_managed_bedrock_login(&self.config)? {
             logout_managed_bedrock(&self.config, &self.config_manager).await?;
+            self.auth_manager.reload().await;
             return Ok(None);
         }
         if self.config.model_provider.is_amazon_bedrock() {
