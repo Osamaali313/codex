@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::Args;
 use clap::CommandFactory;
 use clap::Parser;
@@ -40,6 +41,8 @@ use owo_colors::OwoColorize;
 use std::collections::HashSet;
 use std::io::IsTerminal;
 use std::io::Write;
+#[cfg(unix)]
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use supports_color::Stream;
@@ -645,6 +648,10 @@ struct AppServerProxyCommand {
     /// Path to the app-server Unix domain socket to connect to.
     #[arg(long = "sock", value_name = "SOCKET_PATH", value_parser = parse_socket_path)]
     socket_path: Option<AbsolutePathBuf>,
+
+    /// Refresh the long-running app-server's SSH agent socket from this proxy connection.
+    #[arg(long = "forward-ssh-agent", hide = true)]
+    forward_ssh_agent: bool,
 }
 
 #[derive(Debug, Args)]
@@ -1192,6 +1199,9 @@ async fn cli_main(
                             codex_app_server::app_server_control_socket_path(&codex_home)?
                         }
                     };
+                    if proxy_cli.forward_ssh_agent {
+                        refresh_forwarded_ssh_agent(socket_path.as_path())?;
+                    }
                     codex_stdio_to_uds::run(socket_path.as_path()).await?;
                 }
                 Some(AppServerSubcommand::GenerateTs(gen_cli)) => {
@@ -1644,6 +1654,61 @@ async fn cli_main(
     }
 
     Ok(())
+}
+
+#[cfg(unix)]
+const FORWARDED_SSH_AGENT_SOCKET_FILE_NAME: &str = "forwarded-ssh-agent.sock";
+
+#[cfg(unix)]
+fn refresh_forwarded_ssh_agent(control_socket_path: &Path) -> anyhow::Result<()> {
+    let auth_sock = std::env::var_os("SSH_AUTH_SOCK").map(PathBuf::from);
+    refresh_forwarded_ssh_agent_link(control_socket_path, auth_sock.as_deref())
+}
+
+#[cfg(unix)]
+fn refresh_forwarded_ssh_agent_link(
+    control_socket_path: &Path,
+    auth_sock: Option<&Path>,
+) -> anyhow::Result<()> {
+    use std::os::unix::fs::FileTypeExt;
+    use std::os::unix::fs::symlink;
+
+    let link_path = control_socket_path.with_file_name(FORWARDED_SSH_AGENT_SOCKET_FILE_NAME);
+    let auth_sock = auth_sock.filter(|path| {
+        std::fs::metadata(path).is_ok_and(|metadata| metadata.file_type().is_socket())
+    });
+    let Some(auth_sock) = auth_sock else {
+        if let Err(err) = std::fs::remove_file(&link_path)
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            return Err(err).context("failed to clear forwarded SSH agent socket");
+        }
+        return Ok(());
+    };
+
+    let temp_path = link_path.with_extension(format!("tmp.{}", std::process::id()));
+    let _ = std::fs::remove_file(&temp_path);
+    symlink(auth_sock, &temp_path).with_context(|| {
+        format!(
+            "failed to link forwarded SSH agent socket {}",
+            auth_sock.display()
+        )
+    })?;
+    if let Err(err) = std::fs::rename(&temp_path, &link_path) {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(err).with_context(|| {
+            format!(
+                "failed to refresh forwarded SSH agent socket {}",
+                link_path.display()
+            )
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn refresh_forwarded_ssh_agent(_control_socket_path: &std::path::Path) -> anyhow::Result<()> {
+    anyhow::bail!("SSH agent forwarding is only supported on Unix")
 }
 
 fn profile_v2_for_subcommand<'a>(
@@ -3742,9 +3807,60 @@ mod tests {
         assert!(matches!(
             app_server.subcommand,
             Some(AppServerSubcommand::Proxy(AppServerProxyCommand {
-                socket_path: None
+                socket_path: None,
+                forward_ssh_agent: false,
             }))
         ));
+    }
+
+    #[test]
+    fn app_server_proxy_forward_ssh_agent_parses() {
+        let app_server =
+            app_server_from_args(["codex", "app-server", "proxy", "--forward-ssh-agent"].as_ref());
+        assert!(matches!(
+            app_server.subcommand,
+            Some(AppServerSubcommand::Proxy(AppServerProxyCommand {
+                socket_path: None,
+                forward_ssh_agent: true,
+            }))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refresh_forwarded_ssh_agent_link_replaces_stale_target() {
+        use std::os::unix::fs::FileTypeExt;
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let control_socket = temp_dir.path().join("app-server-control.sock");
+        let first_agent = temp_dir.path().join("agent-1.sock");
+        let second_agent = temp_dir.path().join("agent-2.sock");
+        let _first_listener =
+            std::os::unix::net::UnixListener::bind(&first_agent).expect("first agent socket");
+        let _second_listener =
+            std::os::unix::net::UnixListener::bind(&second_agent).expect("second agent socket");
+
+        refresh_forwarded_ssh_agent_link(&control_socket, Some(&first_agent))
+            .expect("link first agent");
+        refresh_forwarded_ssh_agent_link(&control_socket, Some(&second_agent))
+            .expect("replace agent link");
+
+        let link_path = control_socket.with_file_name(FORWARDED_SSH_AGENT_SOCKET_FILE_NAME);
+        assert_eq!(
+            std::fs::read_link(&link_path).expect("read link"),
+            second_agent
+        );
+        assert!(
+            std::fs::metadata(&link_path)
+                .expect("follow link")
+                .file_type()
+                .is_socket()
+        );
+        let _connection =
+            std::os::unix::net::UnixStream::connect(&link_path).expect("connect through link");
+
+        refresh_forwarded_ssh_agent_link(&control_socket, None).expect("clear agent link");
+        assert!(!link_path.exists());
     }
 
     #[test]
@@ -3829,7 +3945,10 @@ mod tests {
 
     #[test]
     fn reject_remote_auth_token_env_for_app_server_proxy() {
-        let subcommand = AppServerSubcommand::Proxy(AppServerProxyCommand { socket_path: None });
+        let subcommand = AppServerSubcommand::Proxy(AppServerProxyCommand {
+            socket_path: None,
+            forward_ssh_agent: false,
+        });
         let err = reject_remote_mode_for_app_server_subcommand(
             /*remote*/ None,
             Some("CODEX_REMOTE_AUTH_TOKEN"),
