@@ -369,7 +369,6 @@ async fn native_environment_selections_preserve_selected_path_syntax() {
             ApiPathString::from_abs_path(&config.cwd, PathConvention::native())
                 .expect("render native cwd"),
         )])
-        .await
         .expect("resolve local selection");
 
     assert_eq!(
@@ -402,7 +401,6 @@ async fn native_environment_selections_reject_duplicate_ids() {
             ("local".to_string(), native_cwd.clone()),
             ("local".to_string(), native_cwd),
         ])
-        .await
         .expect_err("duplicate ids must fail");
 
     assert_eq!(error.to_string(), "duplicate turn environment id `local`");
@@ -413,7 +411,6 @@ async fn native_environment_selections_reject_duplicate_ids() {
             serde_json::from_value(serde_json::json!("relative"))
                 .expect("API path should deserialize"),
         )])
-        .await
         .expect_err("relative cwd must fail at the environment boundary");
     assert_eq!(
         error.to_string(),
