@@ -129,6 +129,9 @@ export class Thread {
       } else if (event.type === "turn.failed") {
         turnFailure = event.error;
         break;
+      } else if (event.type === "error") {
+        turnFailure = { message: event.message };
+        break;
       }
     }
     if (turnFailure) {
