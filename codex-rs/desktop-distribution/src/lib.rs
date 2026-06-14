@@ -18,8 +18,8 @@ mod platform;
 #[path = "windows.rs"]
 mod platform;
 
-/// Resource override for trusted Desktop development builds and external CLI launchers.
-pub const DESKTOP_RESOURCES_PATH_ENV_VAR: &str = "CODEX_DESKTOP_RESOURCES_PATH";
+// Resource override for trusted Desktop development builds and external CLI launchers.
+const DESKTOP_RESOURCES_PATH_ENV_VAR: &str = "CODEX_DESKTOP_RESOURCES_PATH";
 
 #[derive(Debug, thiserror::Error)]
 pub enum DesktopDistributionError {
@@ -49,10 +49,6 @@ pub struct DesktopResources {
 }
 
 impl DesktopResources {
-    pub fn root(&self) -> &Path {
-        self.root.as_path()
-    }
-
     pub fn contained_file(
         &self,
         relative_path: impl AsRef<Path>,

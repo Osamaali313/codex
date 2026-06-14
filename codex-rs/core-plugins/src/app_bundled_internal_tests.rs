@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 
 use codex_desktop_distribution::DesktopResources;
 use codex_plugin::PluginId;
@@ -11,6 +12,7 @@ use super::*;
 
 struct Fixture {
     _temp: TempDir,
+    marketplace_path: PathBuf,
     resources: DesktopResources,
     plugin_data_root: AbsolutePathBuf,
 }
@@ -18,8 +20,9 @@ struct Fixture {
 fn fixture() -> Fixture {
     let temp = tempfile::tempdir().expect("temp dir");
     let resources_root = temp.path().join("resources");
+    let marketplace_path = resources_root.join(BUNDLED_MARKETPLACE_PATH);
     write(
-        &resources_root.join(BUNDLED_MARKETPLACE_PATH),
+        &marketplace_path,
         &json!({
             "name": "openai-bundled",
             "plugins": [{
@@ -37,6 +40,7 @@ fn fixture() -> Fixture {
         resources: DesktopResources::from_trusted_path(resources_root).expect("Desktop resources"),
         plugin_data_root: AbsolutePathBuf::try_from(plugin_data_root)
             .expect("absolute plugin data root"),
+        marketplace_path,
         _temp: temp,
     }
 }
@@ -47,10 +51,7 @@ fn write(path: &Path, contents: &str) {
 }
 
 fn replace_marketplace(fixture: &Fixture, marketplace: serde_json::Value) {
-    write(
-        &fixture.resources.root().join(BUNDLED_MARKETPLACE_PATH),
-        &marketplace.to_string(),
-    );
+    write(&fixture.marketplace_path, &marketplace.to_string());
 }
 
 fn load(fixture: &Fixture) -> Result<Vec<PluginHookSource>, String> {
