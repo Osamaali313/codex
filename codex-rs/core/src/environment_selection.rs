@@ -97,17 +97,20 @@ pub(crate) async fn resolve_environment_selections(
                 None
             }
         };
-        turn_environments.push(TurnEnvironment::new(
-            environment_id,
-            environment,
-            selected_environment.cwd.to_abs_path().map_err(|err| {
+        turn_environments.push(
+            TurnEnvironment::new(
+                environment_id,
+                environment,
+                selected_environment.cwd.clone(),
+                shell,
+            )
+            .map_err(|err| {
                 CodexErr::InvalidRequest(format!(
                     "turn environment cwd `{}` is not valid on this host: {err}",
                     selected_environment.cwd
                 ))
             })?,
-            shell,
-        ));
+        );
     }
     Ok(ResolvedTurnEnvironments { turn_environments })
 }
@@ -272,7 +275,7 @@ url = "ws://127.0.0.1:8765"
             &local_manager,
             &[TurnEnvironmentSelection {
                 environment_id: LOCAL_ENVIRONMENT_ID.to_string(),
-                cwd: cwd_uri,
+                cwd: cwd_uri.clone(),
             }],
         )
         .await
@@ -282,12 +285,15 @@ url = "ws://127.0.0.1:8765"
                 .expect("remote environment"),
         );
         let remote = ResolvedTurnEnvironments {
-            turn_environments: vec![TurnEnvironment::new(
-                REMOTE_ENVIRONMENT_ID.to_string(),
-                remote_environment.clone(),
-                cwd.clone(),
-                /*shell*/ None,
-            )],
+            turn_environments: vec![
+                TurnEnvironment::new(
+                    REMOTE_ENVIRONMENT_ID.to_string(),
+                    remote_environment.clone(),
+                    cwd_uri.clone(),
+                    /*shell*/ None,
+                )
+                .expect("remote turn environment"),
+            ],
         };
         let multiple = ResolvedTurnEnvironments {
             turn_environments: vec![
@@ -295,9 +301,10 @@ url = "ws://127.0.0.1:8765"
                 TurnEnvironment::new(
                     REMOTE_ENVIRONMENT_ID.to_string(),
                     remote_environment,
-                    cwd.clone(),
+                    cwd_uri,
                     /*shell*/ None,
-                ),
+                )
+                .expect("remote turn environment"),
             ],
         };
 
